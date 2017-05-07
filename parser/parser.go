@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	// "log"
 )
 
 type Parser struct {
@@ -15,6 +16,9 @@ type Parser struct {
 	PkgName     string
 	StructNames []string
 	AllStructs  bool
+
+	StructMap map[string]map[string]string
+	Error bool
 }
 
 type visitor struct {
@@ -47,13 +51,88 @@ func (v *visitor) Visit(n ast.Node) (w ast.Visitor) {
 		// }
 		return v
 	case *ast.StructType:
-		fmt.Printf("%s: %+v\n",v.name, n)
+		// fmt.Printf("%s: %+v\n",v.name, n)
 		// fmt.Println(n.Fields.List)
-		for _, fl := range n.Fields.List {
-			if e, ok := fl.Type.(*ast.StarExpr); !ok {
-				fmt.Printf("%s %s\n", fl.Names[0], fl.Type)
-			} else {
-				fmt.Printf("%s *%s\n", fl.Names[0], e.X)
+		var tempStr map[string]string
+		if _, prs := v.Parser.StructMap[v.name]; prs {
+			v.Parser.Error = true
+		} else {
+			v.Parser.StructMap[v.name] = make(map[string]string)
+			tempStr = v.Parser.StructMap[v.name]
+			for _, fl := range n.Fields.List {
+				var tmpField struct{name string; vtype string}
+				vname := fmt.Sprintf("%s",fl.Names[0])
+				prsf := false
+				if _, prsf = tempStr[vname]; prsf {
+					v.Parser.Error = true
+				} else {
+					tmpField.name = vname
+				}
+				if e, ok := fl.Type.(*ast.StarExpr); ok {
+					// fmt.Printf("%s *%s\n", fl.Names[0], e.X)
+					// v.Parser.StructMap[v.name][fmt.Sprintf("%s",fl.Names[0])] = fmt.Sprintf("*%s",e.X)
+					tmpField.vtype = fmt.Sprintf("*%s",e.X)
+				} else {
+					// fmt.Printf("%s %s\n", fl.Names[0], fl.Type)
+					// if fmt.Sprintf("%s",fl.Type) == "string" { fmt.Println("Yahhhooo") }
+					
+					// v.Parser.StructMap[v.name][fmt.Sprintf("%s",fl.Names[0])] = fmt.Sprintf("%s",fl.Type)
+					tmpField.vtype = fmt.Sprintf("%s",fl.Type)
+
+					// switch fmt.Sprintf("%s",fl.Type) {
+					// case "bool":
+					// 	if x, err := strconv.ParseBool(in[i]); err == nil {
+					// 		v.Field(i).SetBool(x)
+					// 	} else {
+					// 		log.Fatal(err)
+					// 	}
+					// case "float32":
+					// 	fallthrough
+					// case "float64":
+					// 	if x, err := strconv.ParseFloat(in[i], 64); err == nil {
+					// 		v.Field(i).SetFloat(x)
+					// 	} else {
+					// 		log.Fatal(err)
+					// 	}
+					// case "int":
+					// 	fallthrough
+					// case "int32":
+					// 	fallthrough
+					// case "int64":
+					// 	if x, err := strconv.ParseInt(in[i], 10, 64); err == nil {
+					// 		v.Field(i).SetInt(x)
+					// 	} else {
+					// 		log.Fatal(err)
+					// 	}
+					// case "string":
+					// 	v.Field(i).SetString(in[i])
+					// case "uint":
+					// 	fallthrough
+					// case "uint32":
+					// 	fallthrough
+					// case "uint64":
+					// 	if x, err := strconv.ParseUint(in[i], 10, 64); err == nil {
+					// 		v.Field(i).SetUint(x)
+					// 	} else {
+					// 		log.Fatal(err)
+					// 	}
+					// // default:
+					// // 	// fmt.Println("Struct field found")
+					// // 	if unmarshaler := getUnmarshaler(v.Field(i).Type(), v.Field(i)); unmarshaler != nil {
+					// // 		// fmt.Println(v.Field(i).Type(), v.Field(i))
+					// // 		if err := unmarshaler.UnmarshalCSV(in[i]); err != nil {
+					// // 			log.Fatal(err)
+					// // 		}
+					// // 	} else {
+					// // 		log.Fatal(err)
+					// // 	}
+					// default:
+					// 	log.Fatal("Type of struct field is not supported")
+					// }
+				}
+				if !prsf {
+					tempStr[tmpField.name] = tmpField.vtype
+				}
 			}
 		}
 	
@@ -68,6 +147,8 @@ func (p *Parser) Parse(fname string, isDir bool) error {
 	if p.PkgPath, err = getPkgPath(fname, isDir); err != nil {
 		return err
 	}
+	p.StructMap = make(map[string]map[string]string)
+	p.Error = false
 
 	fset := token.NewFileSet()
 	if isDir {
@@ -88,6 +169,7 @@ func (p *Parser) Parse(fname string, isDir bool) error {
 		// fmt.Println(f)
 		ast.Walk(&visitor{Parser: p}, f)
 	}
+	
 	return nil
 }
 

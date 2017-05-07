@@ -1,8 +1,8 @@
 package test
 
 type Foo struct {
-	a string
-	b int64
+	a string; b int64
+	c int
 	s *Zoo
 }
 
@@ -11,5 +11,11 @@ type Boo struct {
 	b string
 	z Zoo
 }
+
+// type Boo struct {
+// 	a *floatas64
+// 	b strdsaing
+// 	z Zoo
+// }
 
 type Zoo string
