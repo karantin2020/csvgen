@@ -8,7 +8,6 @@ import (
 	"os"
 	"path"
 	"strings"
-	// "log"
 )
 
 type FieldInfo struct {
@@ -55,15 +54,8 @@ func (v *visitor) Visit(n ast.Node) (w ast.Visitor) {
 	case *ast.TypeSpec:
 		v.name = n.Name.String()
 
-		// Allow to specify non-structs explicitly independent of '-all' flag.
-		// if v.explicit {
-		// 	v.StructNames = append(v.StructNames, v.name)
-		// 	return nil
-		// }
 		return v
 	case *ast.StructType:
-		// fmt.Printf("%s: %+v\n",v.name, n)
-		// fmt.Println(n.Fields.List)
 		var tempStr map[string]string
 
 		// Check if that struct name is cached already
@@ -91,66 +83,11 @@ func (v *visitor) Visit(n ast.Node) (w ast.Visitor) {
 
 					// Check for pointer type
 					if e, ok := fl.Type.(*ast.StarExpr); ok {
-						// fmt.Printf("%s *%s\n", fl.Names[0], e.X)
-						// v.Parser.StructMap[v.name][fmt.Sprintf("%s",fl.Names[0])] = fmt.Sprintf("*%s",e.X)
 						tmpField.Type = fmt.Sprintf("*%s", e.X)
 					} else {
-						// fmt.Printf("%s %s\n", fl.Names[0], fl.Type)
-						// if fmt.Sprintf("%s",fl.Type) == "string" { fmt.Println("Yahhhooo") }
-
 						// v.Parser.StructMap[v.name][fmt.Sprintf("%s",fl.Names[0])] = fmt.Sprintf("%s",fl.Type)
 						tmpField.Type = fmt.Sprintf("%s", fl.Type)
 
-						// switch fmt.Sprintf("%s",fl.Type) {
-						// case "bool":
-						// 	if x, err := strconv.ParseBool(in[i]); err == nil {
-						// 		v.Field(i).SetBool(x)
-						// 	} else {
-						// 		log.Fatal(err)
-						// 	}
-						// case "float32":
-						// 	fallthrough
-						// case "float64":
-						// 	if x, err := strconv.ParseFloat(in[i], 64); err == nil {
-						// 		v.Field(i).SetFloat(x)
-						// 	} else {
-						// 		log.Fatal(err)
-						// 	}
-						// case "int":
-						// 	fallthrough
-						// case "int32":
-						// 	fallthrough
-						// case "int64":
-						// 	if x, err := strconv.ParseInt(in[i], 10, 64); err == nil {
-						// 		v.Field(i).SetInt(x)
-						// 	} else {
-						// 		log.Fatal(err)
-						// 	}
-						// case "string":
-						// 	v.Field(i).SetString(in[i])
-						// case "uint":
-						// 	fallthrough
-						// case "uint32":
-						// 	fallthrough
-						// case "uint64":
-						// 	if x, err := strconv.ParseUint(in[i], 10, 64); err == nil {
-						// 		v.Field(i).SetUint(x)
-						// 	} else {
-						// 		log.Fatal(err)
-						// 	}
-						// // default:
-						// // 	// fmt.Println("Struct field found")
-						// // 	if unmarshaler := getUnmarshaler(v.Field(i).Type(), v.Field(i)); unmarshaler != nil {
-						// // 		// fmt.Println(v.Field(i).Type(), v.Field(i))
-						// // 		if err := unmarshaler.UnmarshalCSV(in[i]); err != nil {
-						// // 			log.Fatal(err)
-						// // 		}
-						// // 	} else {
-						// // 		log.Fatal(err)
-						// // 	}
-						// default:
-						// 	log.Fatal("Type of struct field is not supported")
-						// }
 					}
 					// Set field type
 					tempStr[tmpField.Name] = tmpField.Type
@@ -191,7 +128,6 @@ func (p *Parser) Parse(fname string, isDir bool) error {
 			fmt.Println("Error parsing file:", err)
 			return err
 		}
-		// fmt.Println(f)
 		ast.Walk(&visitor{Parser: p}, f)
 	}
 
