@@ -1,9 +1,9 @@
 package main
 
 import (
-	"os"
 	"fmt"
 	"github.com/karantin2020/csvgen/parser"
+	"os"
 )
 
 var (
@@ -20,6 +20,7 @@ func main() {
 	if err := p.Parse(fname, fInfo.IsDir()); err != nil {
 		return
 	}
-	fmt.Println(p.Error)
+	fmt.Println("Parse Error:", p.Error)
 	fmt.Println(p.StructMap)
+	fmt.Printf("%+v\n", p.Structs)
 }

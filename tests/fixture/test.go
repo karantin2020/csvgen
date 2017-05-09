@@ -1,14 +1,15 @@
 package test
 
 type Foo struct {
-	a string; b int64
+	a string
+	b int64
 	c int
 	s *Zoo
 }
 
 type Boo struct {
 	a *float64
-	b string
+	b *string
 	z Zoo
 }
 
