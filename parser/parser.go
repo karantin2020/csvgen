@@ -85,7 +85,6 @@ func (v *visitor) Visit(n ast.Node) (w ast.Visitor) {
 					if e, ok := fl.Type.(*ast.StarExpr); ok {
 						tmpField.Type = fmt.Sprintf("*%s", e.X)
 					} else {
-						// v.Parser.StructMap[v.name][fmt.Sprintf("%s",fl.Names[0])] = fmt.Sprintf("%s",fl.Type)
 						tmpField.Type = fmt.Sprintf("%s", fl.Type)
 
 					}
@@ -130,6 +129,8 @@ func (p *Parser) Parse(fname string, isDir bool) error {
 		}
 		ast.Walk(&visitor{Parser: p}, f)
 	}
+	fmt.Println(p.PkgName)
+	fmt.Println(p.PkgPath)
 
 	return nil
 }

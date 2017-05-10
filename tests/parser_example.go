@@ -11,7 +11,7 @@ var (
 )
 
 func main() {
-	fname := "./fixture/test.go"
+	fname := "./fixture"
 	fInfo, err := os.Stat(fname)
 	if err != nil {
 		return
