@@ -211,6 +211,7 @@ func GenerateFuncs(vstr parser.StructInfo /*, fields map[string]string*/) {
 			unmarshallBody = append(unmarshallBody, s)
 			g = Op(star).Id("this").Op(".").Id(istr.Name).Op("=").Id("in").Index(Id("i"))
 		default:
+			// By default generated code calls 'func (this *Type) UnmarshallCSV(s string) error'
 			g = If(
 				Err().Op(":=").Id("this").Op(".").Id(istr.Name).Op(".").Id("UnmarshallCSV").
 					Call(Id("in").Index(Id("i"))),

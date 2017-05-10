@@ -1,2 +1,3 @@
 csvgen
 tests/example
+tests/test.go
