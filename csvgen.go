@@ -17,7 +17,7 @@ var (
 	subpkg string
 	out    string
 	fname  string
-	fInfo  FileInfo
+	fInfo  os.FileInfo
 	// apn bool
 
 	// Package vars
@@ -49,25 +49,25 @@ func main() {
 		log.Fatal("didn't pass source file to parse")
 		os.Exit(1)
 	}
-	err error
+	var err error
 	if fInfo, err = os.Stat(fname); err != nil {
 		fmt.Println("Couldn't find source file to parse.", err)
 		os.Exit(1)
 	}
 
-	if out == "" {
-		// log.Fatal("didn't pass output file name")
-		// os.Exit(1)
-		if fInfo.IsDir() {
-			out = filepath.Join(fname, p.PkgName+"_easyjson.go")
-		} else {
-			if s := strings.TrimSuffix(fname, ".go"); s == fname {
-				return errors.New("Filename must end in '.go'")
-			} else {
-				outName = s + "_easyjson.go"
-			}
-		}
-	}
+	// if out == "" {
+	// 	// log.Fatal("didn't pass output file name")
+	// 	// os.Exit(1)
+	// 	if fInfo.IsDir() {
+	// 		out = filepath.Join(fname, p.PkgName+"_easyjson.go")
+	// 	} else {
+	// 		if s := strings.TrimSuffix(fname, ".go"); s == fname {
+	// 			return errors.New("Filename must end in '.go'")
+	// 		} else {
+	// 			outName = s + "_easyjson.go"
+	// 		}
+	// 	}
+	// }
 	if ok := strings.HasSuffix(out, ".go"); !ok {
 		out = out + ".go"
 	}
@@ -76,7 +76,7 @@ func main() {
 }
 
 func WriteString( /*dir, name, */ pkgCnt string /*, apn bool*/) {
-	
+
 	if _, err := os.Stat(subpkg); os.IsNotExist(err) {
 		fmt.Println(subpkg, "not exists. Trying to make directory")
 		if err := os.Mkdir(subpkg, os.ModePerm); err != nil {
@@ -139,9 +139,10 @@ func GenerateFuncs(vstr parser.StructInfo /*, fields map[string]string*/) {
 	var marshallBody []Code
 
 	unmarshallBody = append(unmarshallBody, Id("i").Op(":=").Lit(0))
+	marshallBody = append(marshallBody, Id("out").Op(":=").Lit(""))
 
 	for ik, istr := range vstr.Fields {
-		var g, j, s *Statement
+		var g, s *Statement
 		star := ""
 		ttype := istr.Type
 		if istr.Type[0] == '*' {
@@ -157,66 +158,62 @@ func GenerateFuncs(vstr parser.StructInfo /*, fields map[string]string*/) {
 		} else {
 			s = Null()
 		}
-		j = Block(
-			s,
-			Op(star).Id("this").Op(".").Id(istr.Name).Op("=").Id("x"),
-			Return().Nil(),
-		).Else().Block(
-			Return().Err(),
-		)
+
 		switch ttype {
 		case "bool":
 			g = If(
 				List(Id("x"), Err()).Op(":=").Qual("strconv", "ParseBool").Call(Id("in").Index(Id("i"))),
 				Err().Op("!=").Nil(),
-			).Add(j)
+			).Add(genReturn(s, star, istr.Name, ttype))
 		case "float32":
 			fallthrough
 		case "float64":
 			g = If(
-				List(Id("x"), Err()).Op(":=").Qual("strconv", "ParseFloat").Call(List(Id("in").Index(Id("i")), Id(istr.Type[5:]))),
+				List(Id("x"), Err()).Op(":=").Qual("strconv", "ParseFloat").Call(List(Id("in").Index(Id("i")), Id(ttype[5:]))),
 				Err().Op("!=").Nil(),
-			).Add(j)
+			).Add(genReturn(s, star, istr.Name, ttype))
 		case "int":
-			// By default int is always equal to int64
+			fallthrough
+		case "int8":
+			fallthrough
+		case "int16":
 			fallthrough
 		case "int32":
 			fallthrough
 		case "int64":
-			bn := 64
-			if len(istr.Type) > 3 && istr.Type[4] == '2' {
-				bn = 32
+			bn := ttype[3:]
+			if bn == "" {
+				bn = "0"
 			}
 			g = If(
-				List(Id("x"), Err()).Op(":=").Qual("strconv", "ParseInt").Call(List(Id("in").Index(Id("i")), Lit(bn))),
+				List(Id("x"), Err()).Op(":=").Qual("strconv", "ParseInt").Call(List(Id("in").Index(Id("i")), Lit(10), Id(bn))),
 				Err().Op("!=").Nil(),
-			).Add(j)
+			).Add(genReturn(s, star, istr.Name, ttype))
 		case "uint":
-			// By default uint is always equal to uint64
+			fallthrough
+		case "uint8":
+			fallthrough
+		case "uint16":
 			fallthrough
 		case "uint32":
 			fallthrough
 		case "uint64":
-			bn := 64
-			if len(istr.Type) > 4 && istr.Type[5] == '2' {
-				bn = 32
+			bn := ttype[4:]
+			if bn == "" {
+				bn = "0"
 			}
 			g = If(
 				List(Id("x"), Err()).Op(":=").Qual("strconv", "ParseUint").
-					Call(List(Id("in").Index(Id("i")), Lit(10), Lit(bn))),
+					Call(List(Id("in").Index(Id("i")), Lit(10), Id(bn))),
 				Err().Op("!=").Nil(),
-			).Add(j)
+			).Add(genReturn(s, star, istr.Name, ttype))
 		case "string":
 			unmarshallBody = append(unmarshallBody, s)
 			g = Op(star).Id("this").Op(".").Id(istr.Name).Op("=").Id("in").Index(Id("i"))
 		default:
-			op := "&"
-			if star == "*" {
-				op = ""
-			}
 			g = If(
-				Err().Op(":=").Qual("encoding/json", "Unmarshal").
-					Call(List(Index().Byte().Parens(Id("in").Index(Id("i"))), Op(op).Id("this").Op(".").Id(istr.Name))),
+				Err().Op(":=").Id("this").Op(".").Id(istr.Name).Op(".").Id("UnmarshallCSV").
+					Call(Id("in").Index(Id("i"))),
 				Err().Op("!=").Nil(),
 			).Block(
 				Return().Err(),
@@ -225,6 +222,9 @@ func GenerateFuncs(vstr parser.StructInfo /*, fields map[string]string*/) {
 		unmarshallBody = append(unmarshallBody, g)
 		if ik != (len(vstr.Fields) - 1) {
 			unmarshallBody = append(unmarshallBody, Id("i").Op("+=").Lit(1))
+		} else {
+			unmarshallBody = append(unmarshallBody, Return().Id("nil"))
+			marshallBody = append(marshallBody, Return().List(Id("out"), Id("nil")))
 		}
 	}
 
@@ -245,5 +245,22 @@ func GenerateFuncs(vstr parser.StructInfo /*, fields map[string]string*/) {
 	).Id("MarshalCSV").Params().
 		Parens(Id("string").Op(",").Id("error")).Block(
 		marshallBody...,
+	)
+}
+
+func genReturn(starStmt Code, star string, fieldName string, fieldType string) *Statement {
+	var conv *Statement
+
+	//  Check for float and int
+	if fieldType[len(fieldType)-2:] != "64" {
+		conv = Id(fieldType).Call(Id("x"))
+	} else {
+		conv = Id("x")
+	}
+	return Block(
+		starStmt,
+		Op(star).Id("this").Op(".").Id(fieldName).Op("=").Add(conv),
+	).Else().Block(
+		Return().Err(),
 	)
 }

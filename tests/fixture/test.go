@@ -11,6 +11,9 @@ type Boo struct {
 	a *float64
 	b *string
 	z Zoo
+	d int16
+	f float32
+	u uint8
 }
 
 // type Boo struct {
