@@ -5,7 +5,6 @@ import (
 	. "github.com/dave/jennifer/jen"
 	"github.com/karantin2020/cli"
 	"github.com/karantin2020/csvgen/parser"
-	// "log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,7 +17,6 @@ var (
 	out    string
 	fname  string
 	fInfo  os.FileInfo
-	// apn bool
 
 	// Package vars
 	pkgCnt string
@@ -32,7 +30,6 @@ func main() {
 	flags.StringVarP(&subpkg, "subpkg", "s", "", "output subpkg name")
 	flags.StringVarP(&fname, "fname", "f", "", "input file")
 	flags.StringVarP(&out, "out", "o", "", "output file")
-	// flags.BoolVarP(&apn, "append", "a", false, "append result of template render to file or not")
 
 	flags.Parse()
 
@@ -54,10 +51,6 @@ func main() {
 		fmt.Println("Couldn't find source file to parse.", err)
 		os.Exit(1)
 	}
-
-	// if ok := strings.HasSuffix(out, ".go"); !ok {
-	// 	out = out + ".go"
-	// }
 
 	WriteString(pkgCnt)
 }
