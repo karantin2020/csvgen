@@ -76,6 +76,10 @@ func WriteString(pkgCnt string) {
 			}
 		}
 		pkgCnt = p.PkgName
+	} else {
+		if s := strings.TrimSuffix(out, ".go"); s == out {
+			out = out + ".go"
+		}
 	}
 	fmt.Println("out is:", out)
 	if subpkg != "" {
