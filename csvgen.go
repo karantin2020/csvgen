@@ -72,10 +72,10 @@ func main() {
 		out = out + ".go"
 	}
 
-	WriteString( /*subpkg, out, */ pkgCnt /*, apn*/)
+	WriteString(pkgCnt)
 }
 
-func WriteString( /*dir, name, */ pkgCnt string /*, apn bool*/) {
+func WriteString(pkgCnt string) {
 
 	if _, err := os.Stat(subpkg); os.IsNotExist(err) {
 		fmt.Println(subpkg, "not exists. Trying to make directory")
@@ -114,7 +114,13 @@ func GenerateCode() {
 
 }
 
-func GenerateFuncs(vstr parser.StructInfo /*, fields map[string]string*/) {
+// Generated functions MarshallCSV and UnmarshallCSV process builtin types,
+// call MarshallCSV and UnmarshallCSV for custom types
+// and process pointer types assuming that pointers were initiated (memory is
+// allocated).
+// So the best way is to verify data structures before marshalling
+// and unmarshalling for null pointers to prevent SEGFAULT
+func GenerateFuncs(vstr parser.StructInfo) {
 
 	// func (this *Type) UnmarshalCSV(in []string) error {
 	//  i := 0
@@ -125,53 +131,55 @@ func GenerateFuncs(vstr parser.StructInfo /*, fields map[string]string*/) {
 	//  }
 	//  i++
 	//  if x, err := strconv.ParseInt(in[i], 10, 64); err == nil {
-	//      this.i = x
+	//      this.a = x
 	//  } else {
 	//      return err
 	//  }
 	// }
 	//
-	// // func (this Type) MarshalCSV() (string, error) {
+	// // func (this Type) MarshalCSV() []string {
+	//      out := []string{}
+	//      out = append(out, strconv.FormatInt(int64(this.a), 10))
+	//      out = append(out, strconv.FormatBool(this.b))
 	//      ...marshal logic
+	//      return out, nil
 	// }
 
 	var unmarshallBody []Code
 	var marshallBody []Code
 
 	unmarshallBody = append(unmarshallBody, Id("i").Op(":=").Lit(0))
-	marshallBody = append(marshallBody, Id("out").Op(":=").Lit(""))
+	marshallBody = append(marshallBody, Id("out").Op(":=").Index().String().Values())
 
 	for ik, istr := range vstr.Fields {
-		var g, s *Statement
+		var g, j *Statement
 		star := ""
 		ttype := istr.Type
 		if istr.Type[0] == '*' {
 			star = "*"
 			ttype = istr.Type[1:]
 		}
-		if star == "*" {
-			s = If(
-				Id("this").Op(".").Id(istr.Name).Op("==").Id("nil"),
-			).Block(
-				Return().Qual("errors", "New").Call(Lit("nil pointer found at " + istr.Name + " " + istr.Type)),
-			)
-		} else {
-			s = Null()
-		}
 
+		unmarshallBody = append(unmarshallBody, nilCheck(star, istr.Name, istr.Type, false))
+		marshallBody = append(marshallBody, nilCheck(star, istr.Name, istr.Type, true))
 		switch ttype {
 		case "bool":
 			g = If(
 				List(Id("x"), Err()).Op(":=").Qual("strconv", "ParseBool").Call(Id("in").Index(Id("i"))),
 				Err().Op("!=").Nil(),
-			).Add(genReturn(s, star, istr.Name, ttype))
+			).Add(genReturn(star, istr.Name, ttype))
+			j = marshalBody(Qual("strconv", "FormatBool").Call(Op(star).Id("this").Op(".").Id(istr.Name)))
 		case "float32":
 			fallthrough
 		case "float64":
 			g = If(
 				List(Id("x"), Err()).Op(":=").Qual("strconv", "ParseFloat").Call(List(Id("in").Index(Id("i")), Id(ttype[5:]))),
 				Err().Op("!=").Nil(),
-			).Add(genReturn(s, star, istr.Name, ttype))
+			).Add(genReturn(star, istr.Name, ttype))
+			j = marshalBody(Qual("strconv", "FormatFloat").
+				Call(Op("float64").Call(Op(star).Id("this").Op(".").Id(istr.Name)),
+					LitRune('f'), Lit(-1), Id(ttype[5:])),
+			)
 		case "int":
 			fallthrough
 		case "int8":
@@ -188,7 +196,10 @@ func GenerateFuncs(vstr parser.StructInfo /*, fields map[string]string*/) {
 			g = If(
 				List(Id("x"), Err()).Op(":=").Qual("strconv", "ParseInt").Call(List(Id("in").Index(Id("i")), Lit(10), Id(bn))),
 				Err().Op("!=").Nil(),
-			).Add(genReturn(s, star, istr.Name, ttype))
+			).Add(genReturn(star, istr.Name, ttype))
+			j = marshalBody(Qual("strconv", "FormatInt").
+				Call(Op("int64").Call(Op(star).Id("this").Op(".").Id(istr.Name)), Lit(10)),
+			)
 		case "uint":
 			fallthrough
 		case "uint8":
@@ -206,10 +217,13 @@ func GenerateFuncs(vstr parser.StructInfo /*, fields map[string]string*/) {
 				List(Id("x"), Err()).Op(":=").Qual("strconv", "ParseUint").
 					Call(List(Id("in").Index(Id("i")), Lit(10), Id(bn))),
 				Err().Op("!=").Nil(),
-			).Add(genReturn(s, star, istr.Name, ttype))
+			).Add(genReturn(star, istr.Name, ttype))
+			j = marshalBody(Qual("strconv", "FormatUint").
+				Call(Op("uint64").Call(Op(star).Id("this").Op(".").Id(istr.Name)), Lit(10)),
+			)
 		case "string":
-			unmarshallBody = append(unmarshallBody, s)
 			g = Op(star).Id("this").Op(".").Id(istr.Name).Op("=").Id("in").Index(Id("i"))
+			j = marshalBody(Op(star).Id("this").Op(".").Id(istr.Name))
 		default:
 			// By default generated code calls 'func (this *Type) UnmarshallCSV(s string) error'
 			g = If(
@@ -219,8 +233,19 @@ func GenerateFuncs(vstr parser.StructInfo /*, fields map[string]string*/) {
 			).Block(
 				Return().Err(),
 			)
+			// By default generated code calls 'func (this Type) MarshallCSV() (string, error)'
+			j = If(
+				List(Id("mt"), Err()).Op(":=").Id("this").Op(".").Id(istr.Name).Op(".").Id("MarshallCSV").
+					Call(),
+				Err().Op("!=").Nil(),
+			).Block(
+				Return(Id("out"), Err()),
+			).Else().Block(
+				marshalBody(Id("mt")),
+			)
 		}
 		unmarshallBody = append(unmarshallBody, g)
+		marshallBody = append(marshallBody, j)
 		if ik != (len(vstr.Fields) - 1) {
 			unmarshallBody = append(unmarshallBody, Id("i").Op("+=").Lit(1))
 		} else {
@@ -244,12 +269,12 @@ func GenerateFuncs(vstr parser.StructInfo /*, fields map[string]string*/) {
 	f.Func().Params(
 		Id("this").Id(vstr.Name),
 	).Id("MarshalCSV").Params().
-		Parens(Id("string").Op(",").Id("error")).Block(
+		Parens(Index().String().Op(",").Id("error")).Block(
 		marshallBody...,
 	)
 }
 
-func genReturn(starStmt Code, star string, fieldName string, fieldType string) *Statement {
+func genReturn(star string, fieldName string, fieldType string) *Statement {
 	var conv *Statement
 
 	//  Check for float and int
@@ -259,9 +284,31 @@ func genReturn(starStmt Code, star string, fieldName string, fieldType string) *
 		conv = Id("x")
 	}
 	return Block(
-		starStmt,
 		Op(star).Id("this").Op(".").Id(fieldName).Op("=").Add(conv),
 	).Else().Block(
 		Return().Err(),
 	)
+}
+
+func marshalBody(typeRes *Statement) *Statement {
+	return Id("out").Op("=").Id("append").Call(Id("out"), Add(typeRes))
+}
+
+func nilCheck(star string, iname, itype string, marshall bool) *Statement {
+	var s, t *Statement
+	if marshall {
+		t = List(Id("out"), Qual("errors", "New").Call(Lit("nil pointer found at "+iname+" "+itype)))
+	} else {
+		t = Qual("errors", "New").Call(Lit("nil pointer found at " + iname + " " + itype))
+	}
+	if star == "*" {
+		s = If(
+			Id("this").Op(".").Id(iname).Op("==").Id("nil"),
+		).Block(
+			Return().Add(t),
+		)
+	} else {
+		s = Null()
+	}
+	return s
 }

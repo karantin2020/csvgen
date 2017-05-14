@@ -8,12 +8,13 @@ type Foo struct {
 }
 
 type Boo struct {
-	a *float64
-	b *string
-	z Zoo
-	d int16
-	f float32
-	u uint8
+	a  *float64
+	b  *string
+	z  Zoo
+	d  int16
+	f  float32
+	ff float64
+	u  uint8
 }
 
 // type Boo struct {
@@ -23,3 +24,12 @@ type Boo struct {
 // }
 
 type Zoo string
+
+func (this *Zoo) UnmarshallCSV(in string) error {
+	*this = Zoo(in)
+	return nil
+}
+
+func (this *Zoo) MarshallCSV() (string, error) {
+	return string(*this), nil
+}
