@@ -8,7 +8,8 @@ import (
 	"github.com/karantin2020/csvgen/parser"
 )
 
-//go:generate ./csvgen -p test -s tests -f tests/fixture/test.go -o test
+//go:generate ./csvgen -p tests -s tests -f tests/fixture/test.go -o test
+//go:generate ./csvgen -f tests/fixture
 
 func Test_main(t *testing.T) {
 	tests := []struct {
