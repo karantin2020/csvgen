@@ -1,3 +1,4 @@
 csvgen
 tests/example
 tests/test.go
+tests/fixture/test*
