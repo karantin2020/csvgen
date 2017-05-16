@@ -129,8 +129,8 @@ func (p *Parser) Parse(fname string, isDir bool) error {
 		}
 		ast.Walk(&visitor{Parser: p}, f)
 	}
-	fmt.Println(p.PkgName)
-	fmt.Println(p.PkgPath)
+	// fmt.Println(p.PkgName)
+	// fmt.Println(p.PkgPath)
 
 	return nil
 }

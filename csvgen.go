@@ -25,7 +25,7 @@ var (
 )
 
 func main() {
-	flags := cli.New("This app generates csv Marshall and Unmarshal functions", "0.0.1")
+	flags := cli.New("This app generates csv Marshall and Unmarshal functions", "0.0.2")
 	flags.StringVarP(&pkg, "pkg", "p", "", "output package")
 	flags.StringVarP(&subpkg, "subpkg", "s", "", "output subpkg name")
 	flags.StringVarP(&fname, "fname", "f", "", "input file")
@@ -47,6 +47,10 @@ func main() {
 		os.Exit(1)
 	}
 	var err error
+	if fname, err = filepath.Abs(fname); err != nil {
+		fmt.Println("Couldn't find Abs path of input.", err)
+		os.Exit(1)
+	}
 	if fInfo, err = os.Stat(fname); err != nil {
 		fmt.Println("Couldn't find source file to parse.", err)
 		os.Exit(1)
@@ -55,13 +59,14 @@ func main() {
 	WriteString(pkgCnt)
 }
 
+// WriteString is high level function that parses source
+// and generates output code
 func WriteString(pkgCnt string) {
 
 	if err := p.Parse(fname, fInfo.IsDir()); err != nil {
 		return
 	}
 
-	fmt.Println("fname is:", fname)
 	if out == "" {
 		subpkg = ""
 		if fInfo.IsDir() {
@@ -81,7 +86,6 @@ func WriteString(pkgCnt string) {
 			out = out + ".go"
 		}
 	}
-	fmt.Println("out is:", out)
 	if subpkg != "" {
 		if _, err := os.Stat(subpkg); os.IsNotExist(err) {
 			fmt.Println(subpkg, "not exists. Trying to make directory")
@@ -107,6 +111,7 @@ func WriteString(pkgCnt string) {
 	}
 }
 
+// GenerateCode generates code for every structure from input
 func GenerateCode() {
 
 	for _, v := range p.Structs {
@@ -116,6 +121,7 @@ func GenerateCode() {
 
 }
 
+// GenerateFuncs processes every structure.
 // Generated functions MarshallCSV and UnmarshallCSV process builtin types,
 // call MarshallCSV and UnmarshallCSV for custom types
 // and process pointer types assuming that pointers were initiated (memory is
@@ -196,7 +202,8 @@ func GenerateFuncs(vstr parser.StructInfo) {
 				bn = "0"
 			}
 			g = If(
-				List(Id("x"), Err()).Op(":=").Qual("strconv", "ParseInt").Call(List(Id("in").Index(Id("i")), Lit(10), Id(bn))),
+				List(Id("x"), Err()).Op(":=").Qual("strconv", "ParseInt").
+					Call(List(Id("in").Index(Id("i")), Lit(10), Id(bn))),
 				Err().Op("!=").Nil(),
 			).Add(genReturn(star, istr.Name, ttype))
 			j = marshalBody(Qual("strconv", "FormatInt").
@@ -286,9 +293,9 @@ func genReturn(star string, fieldName string, fieldType string) *Statement {
 		conv = Id("x")
 	}
 	return Block(
-		Op(star).Id("this").Op(".").Id(fieldName).Op("=").Add(conv),
-	).Else().Block(
 		Return().Err(),
+	).Else().Block(
+		Op(star).Id("this").Op(".").Id(fieldName).Op("=").Add(conv),
 	)
 }
 
