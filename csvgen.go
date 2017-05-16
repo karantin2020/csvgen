@@ -256,14 +256,14 @@ func GenerateFuncs(vstr parser.StructInfo) {
 		unmarshallBody = append(unmarshallBody, g)
 		marshallBody = append(marshallBody, j)
 		if ik != (len(vstr.Fields) - 1) {
-			unmarshallBody = append(unmarshallBody, Id("i").Op("+=").Lit(1))
+			unmarshallBody = append(unmarshallBody, Id("i").Op("++"))
 		} else {
 			unmarshallBody = append(unmarshallBody, Return().Id("nil"))
 			marshallBody = append(marshallBody, Return().List(Id("out"), Id("nil")))
 		}
 	}
 
-	f.Comment(vstr.Name + " Unmarshaller func")
+	f.Comment("UnmarshalCSV " + vstr.Name + " func")
 	f.Func().Params(
 		Id("this").Op("*").Id(vstr.Name),
 	).Id("UnmarshalCSV").Params(
@@ -274,7 +274,7 @@ func GenerateFuncs(vstr parser.StructInfo) {
 
 	f.Line()
 
-	f.Comment(vstr.Name + " Marshaller func")
+	f.Comment("MarshalCSV " + vstr.Name + " func")
 	f.Func().Params(
 		Id("this").Id(vstr.Name),
 	).Id("MarshalCSV").Params().
