@@ -31,7 +31,7 @@ var (
 const fieldPrefix = "um"
 
 func main() {
-	flags := cli.New("This app generates csv Marshall and Unmarshal functions", "0.1.1")
+	flags := cli.New("This app generates csv Marshall and Unmarshal functions", "0.1.2")
 	flags.StringVarP(&pkg, "pkg", "p", "", "output package")
 	flags.StringVarP(&subpkg, "subpkg", "s", "", "output subpkg name")
 	flags.StringVarP(&fname, "fname", "f", "", "input file")
@@ -42,7 +42,6 @@ func main() {
 
 	flags.Parse()
 
-	fmt.Println("unmarshal:", unmarshal, "\n", "marshal:", marshal)
 	pkgCnt = "main"
 	if pkg != "" {
 		pkgCnt = pkg
