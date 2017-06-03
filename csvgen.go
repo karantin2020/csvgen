@@ -12,11 +12,15 @@ import (
 
 var (
 	// Config vars
-	pkg    string
-	subpkg string
-	out    string
-	fname  string
-	fInfo  os.FileInfo
+	pkg        string
+	subpkg     string
+	out        string
+	fname      string
+	parseEmpty bool
+	marshal    bool
+	unmarshal  bool
+
+	fInfo os.FileInfo
 
 	// Package vars
 	pkgCnt string
@@ -24,15 +28,21 @@ var (
 	p      = parser.Parser{AllStructs: true}
 )
 
+const fieldPrefix = "um"
+
 func main() {
-	flags := cli.New("This app generates csv Marshall and Unmarshal functions", "0.0.2")
+	flags := cli.New("This app generates csv Marshall and Unmarshal functions", "1.0.1")
 	flags.StringVarP(&pkg, "pkg", "p", "", "output package")
 	flags.StringVarP(&subpkg, "subpkg", "s", "", "output subpkg name")
 	flags.StringVarP(&fname, "fname", "f", "", "input file")
 	flags.StringVarP(&out, "out", "o", "", "output file")
+	flags.BoolVarP(&parseEmpty, "parseempty", "e", false, "parse empty fields with values: '', 0, 0.0, false. Default: false")
+	flags.BoolVarP(&marshal, "marshal", "m", true, "generate MarshalCSV or not")
+	flags.BoolVarP(&unmarshal, "unmarshal", "u", true, "generate UnmarshalCSV or not")
 
 	flags.Parse()
 
+	fmt.Println("unmarshal:", unmarshal, "\n", "marshal:", marshal)
 	pkgCnt = "main"
 	if pkg != "" {
 		pkgCnt = pkg
@@ -122,27 +132,28 @@ func GenerateCode() {
 }
 
 // GenerateFuncs processes every structure.
-// Generated functions MarshallCSV and UnmarshallCSV process builtin types,
-// call MarshallCSV and UnmarshallCSV for custom types
+// Generated functions MarshalCSV and UnmarshalCSV process builtin types,
+// call MarshalCSV and UnmarshalCSV for custom types
 // and process pointer types assuming that pointers were initiated (memory is
 // allocated).
 // So the best way is to verify data structures before marshalling
 // and unmarshalling for null pointers to prevent SEGFAULT
 func GenerateFuncs(vstr parser.StructInfo) {
 
-	// func (this *Type) UnmarshalCSV(in []string) error {
-	//  i := 0
-	//  if x, err := strconv.ParseBool(in[i]); err == nil {
-	//      this.b = x
-	//  } else {
+	// func (pv *Type) UnmarshalCSV(in []string) error {
+	// 	if in == nil || len(in) < 2 {
+	// 		return errors.New("Invalid input to UnmarshalCSV")
+	// 	}
+	//  unm_b, err := strconv.ParseBool(in[0])
+	//  if err != nil {
 	//      return err
 	//  }
-	//  i++
-	//  if x, err := strconv.ParseInt(in[i], 10, 64); err == nil {
-	//      this.a = x
-	//  } else {
+	//  pv.b = b
+	//  unm_a, err := strconv.ParseInt(in[1], 10, 64)
+	//  if err == nil {
 	//      return err
 	//  }
+	//  this.a = a
 	// }
 	//
 	// // func (this Type) MarshalCSV() []string {
@@ -156,11 +167,18 @@ func GenerateFuncs(vstr parser.StructInfo) {
 	var unmarshallBody []Code
 	var marshallBody []Code
 
+	chkError := If(
+		Id("in").Op("==").Id("nil").Op("||").Id("len").Call(Id("in")).Op("<").Lit(len(vstr.Fields)),
+	).Block(
+		Return().Qual("github.com/pkg/errors", "New").Call(Lit("Invalid input to *" + vstr.Name + " UnmarshalCSV")),
+	)
+	unmarshallBody = append(unmarshallBody, chkError)
 	unmarshallBody = append(unmarshallBody, Id("i").Op(":=").Lit(0))
 	marshallBody = append(marshallBody, Id("out").Op(":=").Index().String().Values())
 
 	for ik, istr := range vstr.Fields {
-		var g, j *Statement
+		var g []Code
+		var j *Statement
 		star := ""
 		ttype := istr.Type
 		if istr.Type[0] == '*' {
@@ -170,22 +188,19 @@ func GenerateFuncs(vstr parser.StructInfo) {
 
 		unmarshallBody = append(unmarshallBody, nilCheck(star, istr.Name, istr.Type, false))
 		marshallBody = append(marshallBody, nilCheck(star, istr.Name, istr.Type, true))
+
 		switch ttype {
 		case "bool":
-			g = If(
-				List(Id("x"), Err()).Op(":=").Qual("strconv", "ParseBool").Call(Id("in").Index(Id("i"))),
-				Err().Op("!=").Nil(),
-			).Add(genReturn(star, istr.Name, ttype))
-			j = marshalBody(Qual("strconv", "FormatBool").Call(Op(star).Id("this").Op(".").Id(istr.Name)))
+			op := Qual("strconv", "ParseBool").Call(Id("in").Index(Id("i")))
+			g = parseField(star, istr.Name, ttype, op, "false")
+			j = marshalBody(Qual("strconv", "FormatBool").Call(Op(star).Id("pv").Op(".").Id(istr.Name)))
 		case "float32":
 			fallthrough
 		case "float64":
-			g = If(
-				List(Id("x"), Err()).Op(":=").Qual("strconv", "ParseFloat").Call(List(Id("in").Index(Id("i")), Id(ttype[5:]))),
-				Err().Op("!=").Nil(),
-			).Add(genReturn(star, istr.Name, ttype))
+			op := Qual("strconv", "ParseFloat").Call(List(Id("in").Index(Id("i")), Id(ttype[5:])))
+			g = parseField(star, istr.Name, ttype, op, "0.0")
 			j = marshalBody(Qual("strconv", "FormatFloat").
-				Call(Op("float64").Call(Op(star).Id("this").Op(".").Id(istr.Name)),
+				Call(Op("float64").Call(Op(star).Id("pv").Op(".").Id(istr.Name)),
 					LitRune('f'), Lit(-1), Id(ttype[5:])),
 			)
 		case "int":
@@ -201,13 +216,10 @@ func GenerateFuncs(vstr parser.StructInfo) {
 			if bn == "" {
 				bn = "0"
 			}
-			g = If(
-				List(Id("x"), Err()).Op(":=").Qual("strconv", "ParseInt").
-					Call(List(Id("in").Index(Id("i")), Lit(10), Id(bn))),
-				Err().Op("!=").Nil(),
-			).Add(genReturn(star, istr.Name, ttype))
+			op := Qual("strconv", "ParseInt").Call(List(Id("in").Index(Id("i")), Lit(10), Id(bn)))
+			g = parseField(star, istr.Name, ttype, op, "0")
 			j = marshalBody(Qual("strconv", "FormatInt").
-				Call(Op("int64").Call(Op(star).Id("this").Op(".").Id(istr.Name)), Lit(10)),
+				Call(Op("int64").Call(Op(star).Id("pv").Op(".").Id(istr.Name)), Lit(10)),
 			)
 		case "uint":
 			fallthrough
@@ -222,29 +234,30 @@ func GenerateFuncs(vstr parser.StructInfo) {
 			if bn == "" {
 				bn = "0"
 			}
-			g = If(
-				List(Id("x"), Err()).Op(":=").Qual("strconv", "ParseUint").
-					Call(List(Id("in").Index(Id("i")), Lit(10), Id(bn))),
-				Err().Op("!=").Nil(),
-			).Add(genReturn(star, istr.Name, ttype))
+			op := Qual("strconv", "ParseUint").Call(List(Id("in").Index(Id("i")), Lit(10), Id(bn)))
+			g = parseField(star, istr.Name, ttype, op, "0")
 			j = marshalBody(Qual("strconv", "FormatUint").
-				Call(Op("uint64").Call(Op(star).Id("this").Op(".").Id(istr.Name)), Lit(10)),
+				Call(Op("uint64").Call(Op(star).Id("pv").Op(".").Id(istr.Name)), Lit(10)),
 			)
 		case "string":
-			g = Op(star).Id("this").Op(".").Id(istr.Name).Op("=").Id("in").Index(Id("i"))
-			j = marshalBody(Op(star).Id("this").Op(".").Id(istr.Name))
+			g = []Code{
+				Op(star).Id("pv").Op(".").Id(istr.Name).Op("=").Id("in").Index(Id("i")),
+			}
+			j = marshalBody(Op(star).Id("pv").Op(".").Id(istr.Name))
 		default:
-			// By default generated code calls 'func (this *Type) UnmarshallCSV(s string) error'
-			g = If(
-				Err().Op(":=").Id("this").Op(".").Id(istr.Name).Op(".").Id("UnmarshallCSV").
-					Call(Id("in").Index(Id("i"))),
-				Err().Op("!=").Nil(),
-			).Block(
-				Return().Err(),
-			)
-			// By default generated code calls 'func (this Type) MarshallCSV() (string, error)'
+			// By default generated code calls 'func (this *Type) UnmarshalCSV(s string) error'
+			g = []Code{
+				If(
+					Err().Op(":=").Id("pv").Op(".").Id(istr.Name).Op(".").Id("UnmarshalCSV").
+						Call(Id("in").Index(Id("i"))),
+					Err().Op("!=").Nil(),
+				).Block(
+					Return().Err(),
+				),
+			}
+			// By default generated code calls 'func (this Type) MarshalCSV() (string, error)'
 			j = If(
-				List(Id("mt"), Err()).Op(":=").Id("this").Op(".").Id(istr.Name).Op(".").Id("MarshallCSV").
+				List(Id("mt"), Err()).Op(":=").Id("pv").Op(".").Id(istr.Name).Op(".").Id("MarshalCSV").
 					Call(),
 				Err().Op("!=").Nil(),
 			).Block(
@@ -253,7 +266,7 @@ func GenerateFuncs(vstr parser.StructInfo) {
 				marshalBody(Id("mt")),
 			)
 		}
-		unmarshallBody = append(unmarshallBody, g)
+		unmarshallBody = append(unmarshallBody, g...)
 		marshallBody = append(marshallBody, j)
 		if ik != (len(vstr.Fields) - 1) {
 			unmarshallBody = append(unmarshallBody, Id("i").Op("++"))
@@ -263,56 +276,90 @@ func GenerateFuncs(vstr parser.StructInfo) {
 		}
 	}
 
-	f.Comment("UnmarshalCSV " + vstr.Name + " func")
-	f.Func().Params(
-		Id("this").Op("*").Id(vstr.Name),
-	).Id("UnmarshalCSV").Params(
-		Id("in").Index().String(),
-	).Id("error").Block(
-		unmarshallBody...,
-	)
+	if unmarshal {
+		f.Comment("UnmarshalCSV " + vstr.Name + " func")
+		f.Func().Params(
+			Id("pv").Op("*").Id(vstr.Name),
+		).Id("UnmarshalCSV").Params(
+			Id("in").Index().String(),
+		).Id("error").Block(
+			unmarshallBody...,
+		)
 
-	f.Line()
+		f.Line()
+	}
 
-	f.Comment("MarshalCSV " + vstr.Name + " func")
-	f.Func().Params(
-		Id("this").Id(vstr.Name),
-	).Id("MarshalCSV").Params().
-		Parens(Index().String().Op(",").Id("error")).Block(
-		marshallBody...,
-	)
+	if marshal {
+		f.Comment("MarshalCSV " + vstr.Name + " func")
+		f.Func().Params(
+			Id("pv").Id(vstr.Name),
+		).Id("MarshalCSV").Params().
+			Parens(Index().String().Op(",").Id("error")).Block(
+			marshallBody...,
+		)
+	}
+
+	if unmarshal {
+		AddList(vstr)
+	}
 }
 
-func genReturn(star string, fieldName string, fieldType string) *Statement {
+func parseField(star string, fieldName string, fieldType string, op *Statement, defv string) []Code {
+	fldNm := fieldPrefix + strings.Title(fieldName)
+	parseBlock := []Code{
+		List(Id(fldNm), Err()).Op(":=").Add(op),
+		If(
+			Err().Op("!=").Nil(),
+		).Block(
+			Return().Err(),
+		),
+	}
+
 	var conv *Statement
 
 	//  Check for float and int
 	if fieldType[len(fieldType)-2:] != "64" {
-		conv = Id(fieldType).Call(Id("x"))
+		conv = Id(fieldType).Call(Id(fldNm))
 	} else {
-		conv = Id("x")
+		conv = Id(fldNm)
 	}
-	return Block(
-		Return().Err(),
-	).Else().Block(
-		Op(star).Id("this").Op(".").Id(fieldName).Op("=").Add(conv),
-	)
+
+	parseBlock = append(parseBlock, Op(star).Id("pv").Op(".").Id(fieldName).Op("=").Add(conv))
+
+	// Parse empty string with type rules
+	// if in[i] == "" {
+	// 	pv.Pp = 0
+	// } else {
+	//	...
+	// }
+	if parseEmpty {
+		parseBlock = []Code{
+			If(
+				Id("in").Index(Id("i")).Op("==").Lit(""),
+			).Block(
+				Op(star).Id("pv").Op(".").Id(fieldName).Op("=").Id(defv),
+			).Else().Block(
+				parseBlock...,
+			),
+		}
+	}
+	return parseBlock
 }
 
 func marshalBody(typeRes *Statement) *Statement {
-	return Id("out").Op("=").Id("append").Call(Id("out"), Add(typeRes))
+	return Id("out").Op("=").Append(Id("out"), Add(typeRes))
 }
 
 func nilCheck(star string, iname, itype string, marshall bool) *Statement {
 	var s, t *Statement
 	if marshall {
-		t = List(Id("out"), Qual("errors", "New").Call(Lit("nil pointer found at "+iname+" "+itype)))
+		t = List(Id("out"), Qual("github.com/pkg/errors", "New").Call(Lit("nil pointer found at "+iname+" "+itype)))
 	} else {
-		t = Qual("errors", "New").Call(Lit("nil pointer found at " + iname + " " + itype))
+		t = Qual("github.com/pkg/errors", "New").Call(Lit("nil pointer found at " + iname + " " + itype))
 	}
 	if star == "*" {
 		s = If(
-			Id("this").Op(".").Id(iname).Op("==").Id("nil"),
+			Id("pv").Op(".").Id(iname).Op("==").Id("nil"),
 		).Block(
 			Return().Add(t),
 		)
@@ -320,4 +367,45 @@ func nilCheck(star string, iname, itype string, marshall bool) *Statement {
 		s = Null()
 	}
 	return s
+}
+
+func AddList(vstr parser.StructInfo) {
+	// type FooList []Foo
+
+	// func (pl *FooList) Push(in []string) error {
+	// 	nf := Foo{}
+	// 	if err := nf.UnmarshalCSV(in); err != nil {
+	// 		return errors.Wrap(err, "Error in UnmarshalCSV Foo")
+	// 	}
+	// 	*pl = append(*pl, nf)
+	// 	return nil
+	// }
+
+	f.Line()
+
+	f.Comment(vstr.Name + "List csvparse.Pusher implementation")
+	f.Type().Id(vstr.Name + "List").Index().Id(vstr.Name)
+
+	f.Line()
+
+	f.Comment("Push function for " + vstr.Name + "List struct")
+	f.Func().Params(
+		Id("pl").Op("*").Id(vstr.Name+"List"),
+	).Id("Push").Params(Id("in").Index().String()).
+		Parens(Error()).Block(
+		Id("nf").Op(":=").Id(vstr.Name).Values(),
+		If(
+			Err().Op(":=").Id("nf").Op(".").Id("UnmarshalCSV").Call(Id("in")),
+			Err().Op("!=").Nil(),
+		).Block(
+			Return(Qual("github.com/pkg/errors", "Wrapf").Call(
+				Err(),
+				Lit("Error in UnmarshalCSV "+vstr.Name+" in line %#v "),
+				Id("in")),
+			),
+		),
+		Op("*").Id("pl").Op("=").Append(Op("*").Id("pl"), Id("nf")),
+		Return(Id("nil")),
+	)
+
 }

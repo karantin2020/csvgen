@@ -149,9 +149,8 @@ func getPkgPath(fname string, isDir bool) (string, error) {
 		if rel := strings.TrimPrefix(fname, prefix); rel != fname {
 			if !isDir {
 				return path.Dir(rel), nil
-			} else {
-				return path.Clean(rel), nil
 			}
+			return path.Clean(rel), nil
 		}
 	}
 

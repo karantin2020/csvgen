@@ -25,11 +25,11 @@ type Boo struct {
 
 type Zoo string
 
-func (this *Zoo) UnmarshallCSV(in string) error {
-	*this = Zoo(in)
+func (tz *Zoo) UnmarshallCSV(in string) error {
+	*tz = Zoo(in)
 	return nil
 }
 
-func (this *Zoo) MarshallCSV() (string, error) {
-	return string(*this), nil
+func (tz *Zoo) MarshallCSV() (string, error) {
+	return string(*tz), nil
 }
